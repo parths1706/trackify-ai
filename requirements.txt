@@ -1,0 +1,6 @@
+streamlit
+openai
+motor
+pymongo[srv]
+python-dotenv
+groq
