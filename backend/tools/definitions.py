@@ -82,5 +82,34 @@ TOOLS = [
                 "required": []
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_hours_today",
+            "description": "Get hours logged by each user today (current date only)",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_user_by_name",
+            "description": "Search if a user exists in the system by name. Use this when someone asks 'is there a user named X' or 'does user X exist'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The name or partial name to search for"
+                    }
+                },
+                "required": ["name"]
+            }
+        }
     }
 ]

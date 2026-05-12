@@ -4,3 +4,5 @@ motor
 pymongo[srv]
 python-dotenv
 groq
+fastapi
+uvicorn

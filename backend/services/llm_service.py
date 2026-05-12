@@ -7,17 +7,30 @@ from tools.definitions import TOOLS
 
 client = Groq(api_key=GROQ_API_KEY)
 
-SYSTEM_PROMPT = """You are Trackify AI, a precise analytics assistant for a time-tracking platform called Trackify.
+from datetime import datetime, timezone
+
+today = datetime.now(timezone.utc).strftime("%A, %B %d, %Y")
+
+SYSTEM_PROMPT = f"""Today's date is {today} (UTC).
+
+You are Trackify AI, a friendly analytics assistant for a time-tracking tool called Trackify.
 
 STRICT RULES:
-- You MUST use the provided tools to fetch real data before answering ANY question about users, hours, projects, or tasks
-- NEVER make up users, hours, projects, or any numbers
-- NEVER say "I don't have a database" — you do, via tools
-- If a tool returns empty data, say "No data found for that query"
-- After getting tool results, answer in friendly natural human language
-- Be conversational, warm, and specific — use actual names and numbers from the data
-- Keep answers concise — 2 to 4 sentences max unless listing items
-- For greetings or non-data questions, respond normally without using tools"""
+- Always call the appropriate tool first before answering any data question
+- If the tool returns an empty list [], respond with: "No entries found for that period."
+- NEVER show raw data, JSON, dict objects, query strings, or code in your response
+- NEVER say things like "based on available data" or "the query returned" or show {{'userName': 'x'}}
+- Speak ONLY in plain English like a helpful human assistant
+- Keep answers to 1-3 sentences maximum
+- Use actual names and numbers from the tool result
+- If you genuinely have no data, say so simply: "I couldn't find any data for that."
+- If a user search returns [], say "No user named '[name]' was found in the system."
+- If asked about data that doesn't exist, give a specific "not found" answer using the actual name/term they asked about
+- Never say "No entries found for that period" for non-time questions
+
+GOOD example: "User1 worked 5.75 hours today."
+BAD example: "{{'userName': 'user1'}} 2026-05-12 Result is {{'hours': 5.75}}"
+"""
 
 def build_api_messages(messages):
     api_messages = []
@@ -40,15 +53,20 @@ def build_api_messages(messages):
                 m["content"] = SYSTEM_PROMPT
     return api_messages
 
-def execute_tool(tool_name):
+def execute_tool(tool_name, tool_arguments=None):
+    import json
+    args = json.loads(tool_arguments) if tool_arguments else {}
+    
     tool_map = {
-        "get_all_users": query_service.get_all_users,
-        "get_total_hours_by_user": query_service.get_total_hours_by_user,
-        "get_hours_by_project": query_service.get_hours_by_project,
-        "get_entries_without_task": query_service.get_entries_without_task,
-        "get_active_timers": query_service.get_active_timers,
-        "get_project_list": query_service.get_project_list,
-        "get_user_hours_this_week": query_service.get_user_hours_this_week,
+        "get_all_users": lambda: query_service.get_all_users(),
+        "get_total_hours_by_user": lambda: query_service.get_total_hours_by_user(),
+        "get_hours_by_project": lambda: query_service.get_hours_by_project(),
+        "get_entries_without_task": lambda: query_service.get_entries_without_task(),
+        "get_active_timers": lambda: query_service.get_active_timers(),
+        "get_project_list": lambda: query_service.get_project_list(),
+        "get_user_hours_this_week": lambda: query_service.get_user_hours_this_week(),
+        "get_hours_today": lambda: query_service.get_hours_today(),
+        "search_user_by_name": lambda: query_service.search_user_by_name(args.get("name", "")),
     }
     func = tool_map.get(tool_name)
     if func:
@@ -79,7 +97,7 @@ def chat(messages):
         print(f"[DEBUG] Tool called: {tool_name}")
         
         # Execute the actual Python function
-        result = execute_tool(tool_name)
+        result = execute_tool(tool_name, tool_call.function.arguments)
         
         print(f"[DEBUG] Tool: {tool_name}, Result type: {type(result)}, Result: {result}")
         
@@ -108,12 +126,15 @@ def chat(messages):
         })
         
         # Second call - LLM formats the real data into human answer
-        final_response = client.chat.completions.create(
-            model=MODEL,
-            messages=api_messages
-        )
-        
-        return final_response.choices[0].message.content
+        try:
+            final_response = client.chat.completions.create(
+                model=MODEL,
+                messages=api_messages
+            )
+            return final_response.choices[0].message.content
+        except Exception as e:
+            print(f"[ERROR] Second LLM call failed: {e}")
+            return "Sorry, I had trouble processing that. Please try again."
     
     # No tool needed - direct answer
     return response_message.content

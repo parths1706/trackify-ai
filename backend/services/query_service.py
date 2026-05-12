@@ -185,3 +185,29 @@ def get_user_hours_this_week():
         }
     ]
     return list(db.timeentries.aggregate(pipeline))
+
+def get_hours_today():
+    from datetime import datetime, timezone
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    pipeline = [
+        {"$match": {"startTime": {"$gte": today_start}}},
+        {"$group": {"_id": "$userId", "totalSeconds": {"$sum": "$duration"}}},
+        {
+            "$addFields": {
+                "user_id_obj": {"$toObjectId": "$_id"}
+            }
+        },
+        {"$lookup": {"from": "users", "localField": "user_id_obj", "foreignField": "_id", "as": "user"}},
+        {"$unwind": {"path": "$user", "preserveNullAndEmptyArrays": True}},
+        {"$project": {"userName": "$user.name", "hoursToday": {"$round": [{"$divide": ["$totalSeconds", 3600]}, 2]}}}
+    ]
+    return list(db.timeentries.aggregate(pipeline))
+
+def search_user_by_name(name: str):
+    import re
+    regex = re.compile(name, re.IGNORECASE)
+    users = list(db.users.find(
+        {"name": {"$regex": regex}},
+        {"name": 1, "email": 1, "role": 1, "isActive": 1, "_id": 0}
+    ))
+    return users
