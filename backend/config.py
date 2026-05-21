@@ -17,4 +17,4 @@ def get_secret(key):
 GROQ_API_KEY = get_secret("GROQ_API_KEY")
 MONGODB_URI = get_secret("MONGODB_URI")
 MONGODB_DB = get_secret("MONGODB_DB")
-MODEL = "openai/gpt-oss-120b"
+MODEL = "llama-3.1-8b-instant"

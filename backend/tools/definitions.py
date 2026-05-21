@@ -66,8 +66,8 @@ TOOLS = [
                         "description": "End of the date range in YYYY-MM-DD format (optional)"
                     },
                     "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of contributors to return (default: 10)"
+                        "type": "string",
+                        "description": "Maximum number of contributors to return (e.g., '10')"
                     }
                 },
                 "required": ["project_name"]
@@ -89,10 +89,6 @@ TOOLS = [
                     "end_date": {
                         "type": "string",
                         "description": "End of the date range in YYYY-MM-DD format (optional)"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of employees to return (default: 10)"
                     }
                 },
                 "required": []
@@ -139,6 +135,57 @@ TOOLS = [
                     }
                 },
                 "required": ["entity"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_recent_activity",
+            "description": "Get the most recent time entry for a user — what project they last worked on and when.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_name": {
+                        "type": "string",
+                        "description": "Full or partial name of the employee"
+                    }
+                },
+                "required": ["user_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_idle_employees",
+            "description": "Find employees who have not logged any hours in the last N days.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "days": {
+                        "type": "string",
+                        "description": "Number of days to look back for activity (e.g., '7')"
+                    }
+                },
+                "required": []
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_user_project_hours",
+            "description": "Get a breakdown of hours a specific person logged per project, optionally filtered by date range. Use this when asked which projects someone worked on in a period, or how many hours they spent on each project.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "user_name": {"type": "string", "description": "The name of the employee"},
+                    "start_date": {"type": "string", "description": "Start date in YYYY-MM-DD format"},
+                    "end_date": {"type": "string", "description": "End date in YYYY-MM-DD format"},
+                    "limit": {"type": "string", "description": "Max number of projects to return, default 10"}
+                },
+                "required": ["user_name"]
             }
         }
     }

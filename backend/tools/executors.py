@@ -84,9 +84,14 @@ def get_user_hours(user_name: str, start_date: str = None, end_date: str = None)
         if user_email:
             match_conds.append({"email": user_email})
             
-        match_type2 = {"$or": match_conds}
+        match_type2 = {
+            "$and": [
+                {"$or": match_conds},
+                {"$or": [{"userId": {"$exists": False}}, {"userId": None}]}
+            ]
+        }
         if date_filter:
-            match_type2 = {"$and": [{"$or": match_conds}, date_filter]}
+            match_type2["$and"].append(date_filter)
             
         pipeline2 = [
             {"$match": match_type2},
@@ -183,8 +188,9 @@ def get_user_projects(user_name: str, include_archived: bool = False) -> dict:
         return {"error": f"get_user_projects failed: {str(e)}"}
 
 
-def get_project_contributors(project_name: str, start_date: str = None, end_date: str = None, limit: int = 10) -> dict:
+def get_project_contributors(project_name: str, start_date: str = None, end_date: str = None, limit=10) -> dict:
     try:
+        limit = int(limit)
         project_id, resolved_name, err = resolve_project(project_name)
         if err:
             return {"error": err}
@@ -208,9 +214,14 @@ def get_project_contributors(project_name: str, start_date: str = None, end_date
         ]
         
         # Type 2: String entries
-        match_type2 = {"project": {"$regex": resolved_name, "$options": "i"}}
+        match_type2 = {
+            "$and": [
+                {"project": {"$regex": resolved_name, "$options": "i"}},
+                {"$or": [{"userId": {"$exists": False}}, {"userId": None}]}
+            ]
+        }
         if date_filter:
-            match_type2 = {"$and": [{"project": {"$regex": resolved_name, "$options": "i"}}, date_filter]}
+            match_type2["$and"].append(date_filter)
             
         pipeline2 = [
             {"$match": match_type2},
@@ -256,8 +267,9 @@ def get_project_contributors(project_name: str, start_date: str = None, end_date
         return {"error": f"get_project_contributors failed: {str(e)}"}
 
 
-def get_active_employees(start_date: str = None, end_date: str = None, limit: int = 10) -> dict:
+def get_active_employees(start_date: str = None, end_date: str = None, limit=10) -> dict:
     try:
+        limit = int(limit)
         date_filter = build_date_filter(start_date, end_date)
         
         # Type 1: ObjectId entries
@@ -273,9 +285,14 @@ def get_active_employees(start_date: str = None, end_date: str = None, limit: in
         ]
         
         # Type 2: String entries
-        match_type2 = {"user": {"$ne": "", "$exists": True}}
+        match_type2 = {
+            "$and": [
+                {"user": {"$ne": "", "$exists": True}},
+                {"$or": [{"userId": {"$exists": False}}, {"userId": None}]}
+            ]
+        }
         if date_filter:
-            match_type2 = {"$and": [{"user": {"$ne": "", "$exists": True}}, date_filter]}
+            match_type2["$and"].append(date_filter)
             
         pipeline2 = [
             {"$match": match_type2},
@@ -429,3 +446,212 @@ def get_general_count(entity: str) -> dict:
         return {"entity": entity, "count": count}
     except Exception as e:
         return {"error": f"get_general_count failed: {str(e)}"}
+
+
+def get_user_recent_activity(user_name: str) -> dict:
+    try:
+        user_id, resolved_name, user_email, err = resolve_user(user_name)
+        if err:
+            return {"error": err}
+            
+        # Type 1: ObjectId entries
+        pipeline1 = [
+            {"$match": {"userId": user_id}},
+            {"$sort": {"startTime": -1}},
+            {"$lookup": {"from": "projects", "localField": "projectId", "foreignField": "_id", "as": "project_info"}},
+            {"$match": {"project_info.name": {"$not": re.compile("^_INX-")}}},
+            {"$limit": 1},
+            {"$project": {
+                "_id": 0,
+                "project_name": {"$arrayElemAt": ["$project_info.name", 0]},
+                "start_time": "$startTime",
+                "duration": "$duration"
+            }}
+        ]
+        
+        # Type 2: String entries
+        match_conds = [{"user": {"$regex": resolved_name, "$options": "i"}}]
+        if user_email:
+            match_conds.append({"email": user_email})
+            
+        pipeline2 = [
+            {"$match": {
+                "$and": [
+                    {"$or": match_conds},
+                    {"project": {"$not": re.compile("^_INX-"), "$ne": ""}}
+                ]
+            }},
+            {"$sort": {"startDate": -1}},
+            {"$limit": 1},
+            {"$project": {
+                "_id": 0,
+                "project_name": "$project",
+                "start_time": "$startDate",
+                "duration": "$duration"
+            }}
+        ]
+        
+        res1 = list(db.timeentries.aggregate(pipeline1))
+        res2 = list(db.timeentries.aggregate(pipeline2))
+        
+        recent_entry = None
+        
+        if res1 and res2:
+            date1 = res1[0].get("start_time")
+            date2 = res2[0].get("start_time")
+            if date1 and date2:
+                recent_entry = res1[0] if date1 > date2 else res2[0]
+            elif date1:
+                recent_entry = res1[0]
+            else:
+                recent_entry = res2[0]
+        elif res1:
+            recent_entry = res1[0]
+        elif res2:
+            recent_entry = res2[0]
+            
+        if not recent_entry:
+            return {"user": resolved_name, "message": "No recent activity found."}
+            
+        date_str = recent_entry.get("start_time").strftime("%Y-%m-%d %H:%M:%S") if isinstance(recent_entry.get("start_time"), datetime) else str(recent_entry.get("start_time"))
+        
+        return {
+            "user": resolved_name,
+            "project": recent_entry.get("project_name") or "Unknown Project",
+            "date": date_str,
+            "hours": round(recent_entry.get("duration", 0) / 3600, 2)
+        }
+    except Exception as e:
+        return {"error": f"get_user_recent_activity failed: {str(e)}"}
+
+
+def get_idle_employees(days=7) -> dict:
+    try:
+        days = int(days)
+        from datetime import timedelta, timezone
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        # Get all active users
+        active_users_cursor = db.users.find({"archived": {"$ne": True}})
+        active_users = list(active_users_cursor)
+        
+        # Type 1: Users who logged hours recently (ObjectId)
+        pipeline1 = [
+            {"$match": {"startTime": {"$gte": cutoff_date}, "userId": {"$ne": None}}},
+            {"$group": {"_id": "$userId"}}
+        ]
+        res1 = list(db.timeentries.aggregate(pipeline1))
+        active_user_ids = {item["_id"] for item in res1}
+        
+        # Type 2: Users who logged hours recently (String)
+        pipeline2 = [
+            {"$match": {"startDate": {"$gte": cutoff_date}, "user": {"$ne": "", "$exists": True}}},
+            {"$group": {"_id": "$user"}}
+        ]
+        res2 = list(db.timeentries.aggregate(pipeline2))
+        active_user_names = {item["_id"].lower() for item in res2 if isinstance(item.get("_id"), str)}
+        
+        # Find idle users
+        idle_users = []
+        for u in active_users:
+            if u["_id"] in active_user_ids:
+                continue
+            if u.get("name") and u["name"].lower() in active_user_names:
+                continue
+            idle_users.append(u.get("name", "Unknown User"))
+            
+        return {
+            "idle_employees": idle_users,
+            "days_checked": days,
+            "idle_count": len(idle_users)
+        }
+    except Exception as e:
+        return {"error": f"get_idle_employees failed: {str(e)}"}
+
+
+def get_user_project_hours(user_name: str, start_date: str = None, end_date: str = None, limit=10) -> dict:
+    try:
+        limit = int(limit)
+        user_id, resolved_name, user_email, err = resolve_user(user_name)
+        if err:
+            return {"error": err}
+            
+        date_filter = build_date_filter(start_date, end_date)
+        
+        # Type 1: ObjectId entries
+        match_type1 = {"userId": user_id}
+        if date_filter:
+            match_type1.update(date_filter)
+            
+        pipeline1 = [
+            {"$match": match_type1},
+            {"$group": {"_id": "$projectId", "total_duration": {"$sum": "$duration"}}},
+            {"$lookup": {"from": "projects", "localField": "_id", "foreignField": "_id", "as": "project_info"}},
+            {"$project": {
+                "_id": 0,
+                "name": {"$arrayElemAt": ["$project_info.name", 0]},
+                "total_duration": 1
+            }},
+            {"$match": {"name": {"$not": re.compile("^_INX-")}}}
+        ]
+        
+        # Type 2: String entries
+        match_conds = [{"user": {"$regex": resolved_name, "$options": "i"}}]
+        if user_email:
+            match_conds.append({"email": user_email})
+            
+        match_type2 = {
+            "$and": [
+                {"$or": match_conds},
+                {"$or": [{"userId": {"$exists": False}}, {"userId": None}]}
+            ]
+        }
+        if date_filter:
+            match_type2["$and"].append(date_filter)
+            
+        pipeline2 = [
+            {"$match": match_type2},
+            {"$group": {"_id": "$project", "total_duration": {"$sum": "$duration"}}},
+            {"$project": {
+                "_id": 0,
+                "name": "$_id",
+                "total_duration": 1
+            }},
+            {"$match": {"name": {"$not": re.compile("^_INX-"), "$ne": ""}}}
+        ]
+        
+        res1 = list(db.timeentries.aggregate(pipeline1))
+        res2 = list(db.timeentries.aggregate(pipeline2))
+        
+        project_map = {}
+        for item in res1 + res2:
+            p_name = item.get("name")
+            if not p_name:
+                continue
+            if p_name not in project_map:
+                project_map[p_name] = 0
+            project_map[p_name] += item.get("total_duration", 0)
+            
+        sorted_projects = sorted([
+            {"project": name, "hours": round(dur / 3600, 2)} 
+            for name, dur in project_map.items()
+        ], key=lambda x: x["hours"], reverse=True)
+        
+        total_seconds = sum(project_map.values())
+        total_hours = round(total_seconds / 3600, 2)
+        
+        period = "all time"
+        if start_date or end_date:
+            parts = []
+            if start_date: parts.append(f"from {start_date}")
+            if end_date: parts.append(f"to {end_date}")
+            period = " ".join(parts)
+            
+        return {
+            "user": resolved_name,
+            "project_breakdown": sorted_projects[:limit],
+            "total_hours": total_hours,
+            "period": period
+        }
+    except Exception as e:
+        return {"error": f"get_user_project_hours failed: {str(e)}"}

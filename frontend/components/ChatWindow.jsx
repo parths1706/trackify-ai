@@ -35,7 +35,7 @@ export default function ChatWindow() {
     setIsTyping(true);
 
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
       const res = await fetch(`${API_URL}/api/v1/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -68,7 +68,7 @@ export default function ChatWindow() {
     setMessages([{ role: 'ai', content: 'Chat cleared. Ask me anything about your team.', time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }]);
     setShowChips(true);
     try {
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || '';
       await fetch(`${API_URL}/api/v1/conversations/${sessionId}/clear`, { method: 'POST' });
     } catch(err) {}
   };

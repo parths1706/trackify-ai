@@ -25,7 +25,8 @@ You have tools to query real company data. Rules:
 - Never show raw data, JSON, object IDs, or code to the user
 - If a tool returns an error field, apologize briefly and explain what went wrong in plain English
 - For questions not about data (greetings, general questions), answer directly without tools
-- Keep answers concise: 2–5 sentences for simple questions, a short structured list for complex ones"""
+- Keep answers concise: 2–5 sentences for simple questions, a short structured list for complex ones
+- Never use markdown formatting like asterisks, bold, or bullet points in your responses. Write in plain conversational sentences only."""
 
 
 # ---------------------------------------------------------------------------
@@ -39,6 +40,9 @@ TOOL_MAP = {
     "get_active_employees":     executors.get_active_employees,
     "get_project_stats":        executors.get_project_stats,
     "get_general_count":        executors.get_general_count,
+    "get_user_recent_activity": executors.get_user_recent_activity,
+    "get_idle_employees":       executors.get_idle_employees,
+    "get_user_project_hours":   executors.get_user_project_hours,
 }
 
 
@@ -97,7 +101,12 @@ def chat(messages: list) -> str:
                 max_tokens=1000
             )
         except Exception as e:
-            print(f"[ERROR] LLM call failed: {e}")
+            error_msg = str(e)
+            print(f"[ERROR] LLM call failed: {error_msg}")
+            if "tool_use_failed" in error_msg or "400" in error_msg:
+                api_messages.append({"role": "user", "content": "System error: Tool call validation failed due to invalid formatting. Please generate a valid tool call."})
+                tool_call_count += 1
+                continue
             return "I'm having trouble right now. Please try a simpler question."
 
         assistant_message = response.choices[0].message
