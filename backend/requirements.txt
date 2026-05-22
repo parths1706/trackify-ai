@@ -6,3 +6,8 @@ python-dotenv
 groq
 fastapi
 uvicorn
+langchain
+langchain-groq
+langchain-core
+langgraph
+langsmith
