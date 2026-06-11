@@ -21,6 +21,8 @@ MODEL = "llama-3.1-8b-instant"
 
 GROQ_MODEL_LARGE = "meta-llama/llama-4-scout-17b-16e-instruct"
 GROQ_MODEL_SMALL = "llama-3.1-8b-instant"
+GEMINI_API_KEY = get_secret("GEMINI_API_KEY") or os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = get_secret("GEMINI_MODEL") or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY", "")
 LANGCHAIN_PROJECT = os.getenv("LANGCHAIN_PROJECT", "trackify-ai")
 

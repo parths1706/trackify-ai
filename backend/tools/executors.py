@@ -655,3 +655,22 @@ def get_user_project_hours(user_name: str, start_date: str = None, end_date: str
         }
     except Exception as e:
         return {"error": f"get_user_project_hours failed: {str(e)}"}
+
+
+def validate_pipeline(pipeline: list) -> tuple[bool, str]:
+    """Returns (is_safe, error_message)"""
+    if not isinstance(pipeline, list):
+        return False, "Pipeline must be a list"
+    
+    forbidden = ["$out", "$merge"]
+    pipeline_str = str(pipeline)
+    for op in forbidden:
+        if op in pipeline_str:
+            return False, f"Forbidden operator: {op}"
+    
+    # Check $limit exists somewhere
+    has_limit = any("$limit" in str(stage) for stage in pipeline)
+    if not has_limit:
+        pipeline.append({"$limit": 100})  # auto-add if missing
+    
+    return True, ""
