@@ -1,5 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+function generateUUID() {
+  if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
+    try {
+      return window.crypto.randomUUID();
+    } catch (e) {}
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    const r = Math.random() * 16 | 0;
+    const v = c === 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+}
+
 export default function ChatWindow() {
   const [messages, setMessages] = useState([
     { role: 'ai', content: "Hi! I'm Trackify AI. Ask me anything about your team's time logs, projects, or productivity.", time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }
@@ -11,7 +24,7 @@ export default function ChatWindow() {
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    setSessionId(crypto.randomUUID());
+    setSessionId(generateUUID());
   }, []);
 
   const scrollToBottom = () => {
@@ -47,9 +60,21 @@ export default function ChatWindow() {
           session_id: sessionId
         })
       });
-      const data = await res.json();
+
+      let reply;
+      if (res.ok) {
+        const data = await res.json();
+        reply = data.reply || "No reply was received from the server.";
+      } else {
+        let errorMsg = `HTTP error! status: ${res.status}`;
+        try {
+          const data = await res.json();
+          errorMsg = data.detail || data.error || errorMsg;
+        } catch (_) {}
+        reply = `Error: ${errorMsg}`;
+      }
       
-      setMessages([...newMessages, { role: 'ai', content: data.reply, time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }]);
+      setMessages([...newMessages, { role: 'ai', content: reply, time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }]);
     } catch (err) {
       console.error(err);
       setMessages([...newMessages, { role: 'ai', content: "Sorry, I couldn't connect to the server.", time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }]);
@@ -144,7 +169,7 @@ export default function ChatWindow() {
                       ? 'bg-blue-600 text-white rounded-tr-sm' 
                       : 'bg-white border border-gray-200 rounded-tl-sm text-gray-800 whitespace-pre-wrap'
                   }`}
-                  dangerouslySetInnerHTML={{ __html: msg.content.replace(/\n/g, '<br/>') }}
+                  dangerouslySetInnerHTML={{ __html: (msg.content || '').replace(/\n/g, '<br/>') }}
                 />
                 <span className="text-[12px] text-gray-400 px-1">{msg.time}</span>
               </div>

@@ -190,17 +190,3 @@ TOOLS = [
         }
     }
 ]
-
-from tools import executors
-
-TOOL_MAP = {
-    "get_user_hours": executors.get_user_hours,
-    "get_user_projects": executors.get_user_projects,
-    "get_project_contributors": executors.get_project_contributors,
-    "get_active_employees": executors.get_active_employees,
-    "get_project_stats": executors.get_project_stats,
-    "get_general_count": executors.get_general_count,
-    "get_user_recent_activity": executors.get_user_recent_activity,
-    "get_idle_employees": executors.get_idle_employees,
-}
-

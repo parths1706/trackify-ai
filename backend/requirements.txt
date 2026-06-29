@@ -6,3 +6,10 @@ python-dotenv
 groq
 fastapi
 uvicorn
+langchain
+langchain-groq
+langchain-core
+langgraph
+langsmith
+google-generativeai>=0.8.0
+google-genai

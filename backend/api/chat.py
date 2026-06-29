@@ -37,71 +37,13 @@ async def chat_stream_endpoint(req: ChatRequest):
 
     def generate_stream():
         try:
-            api_messages = build_api_messages(req.messages)
-            
-            # First call to check for tool usage
-            response = client.chat.completions.create(
-                model=MODEL,
-                messages=api_messages,
-                tools=TOOLS,
-                tool_choice="auto",
-                stream=False
-            )
-            
-            response_message = response.choices[0].message
-            
-            if response_message.tool_calls:
-                tool_call = response_message.tool_calls[0]
-                args = json.loads(tool_call.function.arguments)
-                function_name = tool_call.function.name
-
-                result = execute_tool(function_name, args)
-
-                api_messages.append(response_message)
-                api_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": json.dumps(result)
-                })
-                
-                # Second call - stream the final response
-                stream = client.chat.completions.create(
-                    model=MODEL,
-                    messages=api_messages,
-                    stream=True
-                )
-                
-                full_response = ""
-                for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_response += content
-                        yield f"data: {json.dumps({'content': content})}\n\n"
-                        
-                if req.session_id:
-                    conversations_db[req.session_id].append({"role": "assistant", "content": full_response})
-                    
-            else:
-                # No tool call, stream directly
-                stream = client.chat.completions.create(
-                    model=MODEL,
-                    messages=api_messages,
-                    stream=True
-                )
-                
-                full_response = ""
-                for chunk in stream:
-                    if chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_response += content
-                        yield f"data: {json.dumps({'content': content})}\n\n"
-                        
-                if req.session_id:
-                    conversations_db[req.session_id].append({"role": "assistant", "content": full_response})
+            response = sync_chat(req.messages)
+            yield f"data: {json.dumps({'content': response})}\n\n"
+            if req.session_id:
+                conversations_db[req.session_id].append({"role": "assistant", "content": response})
         except Exception as e:
             error_msg = f"Error: {str(e)}"
-            if "400" in str(e):
-                error_msg = "The AI had trouble generating the database query. Please try rephrasing your question."
             yield f"data: {json.dumps({'content': error_msg})}\n\n"
 
     return StreamingResponse(generate_stream(), media_type="text/event-stream")
+
