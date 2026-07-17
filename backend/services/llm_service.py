@@ -9,11 +9,10 @@ TOOLS = []
 def build_api_messages(messages: list) -> list:
     return messages[-6:] if len(messages) > 6 else messages
 
-def chat(messages: list) -> str:
+def chat(messages: list, session_id: str = "default_thread") -> str:
     try:
         user_message = messages[-1]["content"] if messages else ""
-        history = [m for m in messages[:-1]]
-        return run_graph(user_message, history)
+        return run_graph(user_message, session_id=session_id)
     except Exception as e:
         return "I encountered an error. Please try again."
 

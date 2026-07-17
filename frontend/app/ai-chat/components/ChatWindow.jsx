@@ -15,8 +15,16 @@ function generateUUID() {
 
 export default function ChatWindow() {
   const [messages, setMessages] = useState([
-    { role: 'ai', content: "Hi! I'm Trackify AI. Ask me anything about your team's time logs, projects, or productivity.", time: new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) }
+    { role: 'ai', content: "Hi! I'm Trackify AI. Ask me anything about your team's time logs, projects, or productivity.", time: null }
   ]);
+  
+  useEffect(() => {
+    setMessages(prev => prev.map((msg, idx) =>
+      idx === 0 && msg.time === null
+        ? { ...msg, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }
+        : msg
+    ));
+  }, []);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [showChips, setShowChips] = useState(true);
@@ -162,7 +170,7 @@ export default function ChatWindow() {
                   }`}
                   dangerouslySetInnerHTML={{ __html: (msg.content || '').replace(/\n/g, '<br/>') }}
                 />
-                <span className="text-[10.5px] text-gray-400">{msg.time}</span>
+                <span className="text-[10.5px] text-gray-400">{msg.time || ''}</span>
               </div>
             </div>
           ))}

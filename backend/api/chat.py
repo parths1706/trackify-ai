@@ -20,7 +20,7 @@ async def chat_endpoint(req: ChatRequest):
         conversations_db[req.session_id] = req.messages
         
     try:
-        reply = sync_chat(req.messages)
+        reply = sync_chat(req.messages, session_id=req.session_id or "default")
         if req.session_id:
             conversations_db[req.session_id].append({"role": "assistant", "content": reply})
         return {"reply": reply}
@@ -37,7 +37,7 @@ async def chat_stream_endpoint(req: ChatRequest):
 
     def generate_stream():
         try:
-            response = sync_chat(req.messages)
+            response = sync_chat(req.messages, session_id=req.session_id or "default")
             yield f"data: {json.dumps({'content': response})}\n\n"
             if req.session_id:
                 conversations_db[req.session_id].append({"role": "assistant", "content": response})

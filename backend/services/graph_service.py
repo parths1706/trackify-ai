@@ -6,6 +6,7 @@ from bson.json_util import loads as bson_loads
 from google import genai as google_genai
 from google.genai import types as genai_types
 from langgraph.graph import StateGraph, END
+from langgraph.checkpoint.memory import MemorySaver
 from langchain_groq import ChatGroq
 from langsmith import traceable
 from schemas.state import AgentState
@@ -89,7 +90,7 @@ INSTRUCTIONS:
    - "this week" -> start_date: "2026-06-15" (Monday), end_date: "2026-06-21" (Sunday)
    - "yesterday" -> start_date: "2026-06-15", end_date: "2026-06-15"
 3. Any query involving teams or groups of employees (e.g., "team design", "Team QA", "Team Python", "members of Team Backend") must use PATH C ("query_gen") because there are no executors for team-level aggregations or comparisons.
-4. Choose ONE of three output paths:
+4. Choose ONE of five output paths:
 
 PATH A — single known executor fits the question:
 {{"path": "executor", "function": "function_name", "params": {{...}}}}
@@ -102,6 +103,11 @@ PATH C — question is too complex or does not match any executor:
 
 PATH D — greeting or non-data question:
 {{"path": "direct", "answer": "your response here"}}
+
+PATH E — clarify
+{{"path": "clarify", "intent": "user message"}}
+Use this path when the user's message is ambiguous, unclear, a correction, a disagreement, or doesn't clearly map to a data question. Examples: "should be 8", "that doesn't look right", "no that's wrong", "huh?", "what do you mean", or any short reactive message that isn't a new question or a greeting.
+Never default to greeting or query_gen for these — always use clarify.
 
 Return ONLY valid JSON. No explanation. No markdown."""
 
@@ -499,7 +505,28 @@ DATA FROM DATABASE:
         {"role": "user", "content": state["user_question"]}
     ])
     
-    return {**state, "final_response": response.content.strip()}
+    response_content = response.content.strip()
+    return {**state, "final_response": response_content, "chat_history": [{"role": "assistant", "content": response_content}]}
+
+
+# ── NODE 4: handle_clarify ────────────────────────────────────────────────────
+def handle_clarify(state: AgentState) -> AgentState:
+    history_text = build_history_text(state["chat_history"], limit=6)
+    user_question = state["user_question"]
+
+    clarify_prompt = f"""You are Trackify AI, a time-tracking analytics assistant.
+The user sent an unclear or reactive message that doesn't map to a specific data question.
+
+CONVERSATION HISTORY:
+{history_text}
+
+USER MESSAGE: {user_question}
+
+Write a short, natural, helpful clarifying question. If they seem to be disagreeing with a previous answer, ask what they expected or what might be different about their calculation. If their message is vague, ask what specifically they want to know. Keep it 1-2 sentences, conversational, no markdown."""
+
+    response = llm_formatter.invoke(clarify_prompt)
+    response_content = response.content.strip()
+    return {**state, "final_response": response_content, "chat_history": [{"role": "assistant", "content": response_content}]}
 
 
 # ── ROUTER FUNCTION ───────────────────────────────────────────────────────────
@@ -511,6 +538,8 @@ def route_to_node(state: AgentState) -> str:
         return "execute_multi"
     elif path == "direct":
         return "format_answer"
+    elif path == "clarify":
+        return "handle_clarify"
     else:
         return "execute_query_gen"
 
@@ -525,6 +554,7 @@ def build_graph():
     graph.add_node("execute_query_gen", execute_query_gen)
     graph.add_node("correct_query_gen", correct_query_gen)
     graph.add_node("format_answer", format_answer)
+    graph.add_node("handle_clarify", handle_clarify)
     
     graph.set_entry_point("intent_classifier")
     
@@ -536,6 +566,7 @@ def build_graph():
             "execute_multi": "execute_multi",
             "execute_query_gen": "execute_query_gen",
             "format_answer": "format_answer",
+            "handle_clarify": "handle_clarify",
         }
     )
     
@@ -544,18 +575,20 @@ def build_graph():
     graph.add_conditional_edges("execute_query_gen", route_after_query_gen, {"correct_query_gen": "correct_query_gen", "format_answer": "format_answer"})
     graph.add_edge("correct_query_gen", "format_answer")
     graph.add_edge("format_answer", END)
+    graph.add_edge("handle_clarify", END)
     
-    return graph.compile()
+    checkpointer = MemorySaver()
+    return graph.compile(checkpointer=checkpointer)
 
 
 compiled_graph = build_graph()
 
 
 @traceable
-def run_graph(user_question: str, chat_history: list = []) -> str:
+def run_graph(user_question: str, session_id: str = "default_thread") -> str:
     initial_state: AgentState = {
         "user_question": user_question,
-        "chat_history": chat_history,
+        "chat_history": [{"role": "user", "content": user_question}],
         "intent": None,
         "path": None,
         "generated_pipeline": None,
@@ -566,5 +599,6 @@ def run_graph(user_question: str, chat_history: list = []) -> str:
         "retry_count": 0,
     }
     
-    result = compiled_graph.invoke(initial_state)
+    config = {"configurable": {"thread_id": session_id}}
+    result = compiled_graph.invoke(initial_state, config=config)
     return result.get("final_response", "I could not find an answer. Please try rephrasing.")
